@@ -555,6 +555,37 @@ pub async fn mock_confirm_payment(
     Ok(Json(result))
 }
 
+/// Bachs's sandbox API rejects success/cancel URLs that aren't publicly
+/// reachable (e.g. it 400s on `localhost`). Local dev sends exactly that
+/// via `body.success_url`/`cancel_url`, so fall back to the hardcoded
+/// public default rather than forwarding an unusable URL and surfacing
+/// Bachs's rejection as our own 500.
+fn public_or_default(url: Option<String>, default: String) -> String {
+    match url {
+        Some(u) if is_publicly_reachable(&u) => u,
+        _ => default,
+    }
+}
+
+fn is_publicly_reachable(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("https://") else {
+        return false;
+    };
+    let host = rest
+        .split(['/', ':', '?'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    !(host.is_empty()
+        || host == "localhost"
+        || host == "127.0.0.1"
+        || host == "0.0.0.0"
+        || host == "::1"
+        || host.starts_with("192.168.")
+        || host.starts_with("10.")
+        || host.ends_with(".local"))
+}
+
 /// Creates a Bachs.io hosted checkout session server-side. The secret key
 /// never reaches the browser -- the frontend gets back only the checkout
 /// URL to redirect to. Marks the payment's provider as `Bachs`, which is
@@ -580,12 +611,14 @@ pub async fn create_bachs_checkout_session(
         .fetch_one(&state.db)
         .await?;
 
-    let success_url = body.success_url.unwrap_or_else(|| {
-        format!("https://agri-flowmvp.vercel.app/app/transactions/{id}?payment=success")
-    });
-    let cancel_url = body.cancel_url.unwrap_or_else(|| {
-        format!("https://agri-flowmvp.vercel.app/app/transactions/{id}/pay?payment=cancelled")
-    });
+    let success_url = public_or_default(
+        body.success_url,
+        format!("https://agri-flowmvp.vercel.app/app/transactions/{id}?payment=success"),
+    );
+    let cancel_url = public_or_default(
+        body.cancel_url,
+        format!("https://agri-flowmvp.vercel.app/app/transactions/{id}/pay?payment=cancelled"),
+    );
 
     let session = state
         .bachs
@@ -737,4 +770,54 @@ pub async fn get_payment(
     let txn = load_transaction(&state, &id).await?;
     assert_participant_or_admin(&auth, &txn)?;
     Ok(Json(payment_for_txn(&state, &id).await?))
+}
+
+#[cfg(test)]
+mod bachs_redirect_url_tests {
+    use super::{is_publicly_reachable, public_or_default};
+
+    #[test]
+    fn rejects_localhost_and_private_hosts() {
+        for url in [
+            "http://localhost:5173/app/transactions/1?payment=success",
+            "https://localhost:5173/app/transactions/1?payment=success",
+            "https://127.0.0.1:5173/app/transactions/1",
+            "https://192.168.1.42:5173/app/transactions/1",
+            "https://10.0.0.5/app/transactions/1",
+            "https://myhost.local/app/transactions/1",
+            "not-a-url",
+        ] {
+            assert!(!is_publicly_reachable(url), "expected {url} to be rejected");
+        }
+    }
+
+    #[test]
+    fn accepts_a_real_public_https_url() {
+        assert!(is_publicly_reachable(
+            "https://agri-flowmvp.vercel.app/app/transactions/1?payment=success"
+        ));
+    }
+
+    #[test]
+    fn falls_back_to_default_for_localhost_but_keeps_a_real_public_url() {
+        let default = "https://agri-flowmvp.vercel.app/app/transactions/1?payment=success".to_string();
+
+        let fell_back = public_or_default(
+            Some("http://localhost:5173/app/transactions/1?payment=success".to_string()),
+            default.clone(),
+        );
+        assert_eq!(fell_back, default);
+
+        let kept = public_or_default(
+            Some("https://agri-flowmvp.vercel.app/custom?payment=success".to_string()),
+            default,
+        );
+        assert_eq!(kept, "https://agri-flowmvp.vercel.app/custom?payment=success");
+    }
+
+    #[test]
+    fn falls_back_to_default_when_none_provided() {
+        let default = "https://agri-flowmvp.vercel.app/app/transactions/1?payment=success".to_string();
+        assert_eq!(public_or_default(None, default.clone()), default);
+    }
 }
