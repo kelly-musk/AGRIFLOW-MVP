@@ -3,6 +3,7 @@ mod config;
 mod email;
 mod error;
 mod ids;
+mod json_extractor;
 mod models;
 mod routes;
 mod state;

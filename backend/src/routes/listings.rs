@@ -7,6 +7,7 @@ use serde::Deserialize;
 use crate::auth::AuthUser;
 use crate::error::{AppError, AppResult};
 use crate::ids;
+use crate::json_extractor::AppJson;
 use crate::models::listing::{CreateListingRequest, ListingStatus, SupplyListing, UpdateListingRequest};
 use crate::models::user::UserRole;
 use crate::state::AppState;
@@ -89,7 +90,7 @@ pub async fn get_one(
 pub async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(body): Json<CreateListingRequest>,
+    AppJson(body): AppJson<CreateListingRequest>,
 ) -> AppResult<Json<SupplyListing>> {
     auth.require_role(UserRole::Supplier)?;
 
@@ -138,7 +139,7 @@ pub async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<String>,
-    Json(body): Json<UpdateListingRequest>,
+    AppJson(body): AppJson<UpdateListingRequest>,
 ) -> AppResult<Json<SupplyListing>> {
     auth.require_role(UserRole::Supplier)?;
 

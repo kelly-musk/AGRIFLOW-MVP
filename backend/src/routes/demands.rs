@@ -7,6 +7,7 @@ use serde::Deserialize;
 use crate::auth::AuthUser;
 use crate::error::{AppError, AppResult};
 use crate::ids;
+use crate::json_extractor::AppJson;
 use crate::models::demand::{CreateDemandRequest, DemandRequest};
 use crate::models::user::UserRole;
 use crate::state::AppState;
@@ -89,7 +90,7 @@ pub async fn get_one(
 pub async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(body): Json<CreateDemandRequest>,
+    AppJson(body): AppJson<CreateDemandRequest>,
 ) -> AppResult<Json<DemandRequest>> {
     auth.require_role(UserRole::Buyer)?;
 

@@ -3,6 +3,7 @@ use axum::{Json, extract::State, http::HeaderMap};
 use crate::auth::{AuthUser, jwt::issue_token, password::{hash_password, verify_password}};
 use crate::error::{AppError, AppResult};
 use crate::ids;
+use crate::json_extractor::AppJson;
 use crate::models::user::{AuthResponse, LoginRequest, RegisterRequest, User, UserPublic, UserRole};
 use crate::state::AppState;
 
@@ -11,7 +12,7 @@ const ADMIN_KEY_HEADER: &str = "x-admin-registration-key";
 pub async fn register(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(body): Json<RegisterRequest>,
+    AppJson(body): AppJson<RegisterRequest>,
 ) -> AppResult<Json<AuthResponse>> {
     if body.name.trim().is_empty() || body.email.trim().is_empty() {
         return Err(AppError::BadRequest("Name and email are required.".into()));
@@ -96,7 +97,7 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
 
 pub async fn login(
     State(state): State<AppState>,
-    Json(body): Json<LoginRequest>,
+    AppJson(body): AppJson<LoginRequest>,
 ) -> AppResult<Json<AuthResponse>> {
     let user = sqlx::query_as!(
         User,

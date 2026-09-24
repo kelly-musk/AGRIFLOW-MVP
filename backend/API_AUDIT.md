@@ -76,20 +76,27 @@ uniqueness check + retry loop around ID generation.
 Fix: apply the same validation consistently across listing and demand
 creation, and add basic email-format and non-empty-string checks.
 
-### 6. Error response shape is inconsistent
-Hand-written `AppError` responses return `{"error": "..."}` with correct
-status codes. Axum's built-in request-rejection paths do not go through
-`AppError` and return **plain text** instead of JSON:
-- Malformed JSON body → `400`, plain text
-- Invalid enum variant (e.g. bad `role` or `status` value) → `422`, plain
-  text
-- Missing/wrong `Content-Type` header → `415`, plain text ("Expected
-  request with `Content-Type: application/json`")
+### 6. Error response shape is inconsistent — ✅ FIXED (2026-09-24)
+Hand-written `AppError` responses returned `{"error": "..."}` with correct
+status codes, but Axum's built-in request-rejection paths bypassed
+`AppError` and returned **plain text** instead: malformed JSON body (`400`),
+invalid enum variant (`422`), missing/wrong `Content-Type` (`415`).
 
-Any frontend expecting a uniform `{error: string}` envelope will mishandle
-these specific cases. Fix: add a custom JSON-rejection handler (or a
-`FromRequest` wrapper around `Json<T>`) so every error path returns the
-same shape.
+Fixed with a new `AppJson<T>` extractor (`src/json_extractor.rs`) that
+wraps `axum::Json<T>` and converts any `JsonRejection` into `AppError`
+before it reaches the client — preserving the original status code
+(`rejection.status()`) and message (`rejection.body_text()`), just now
+wrapped in the same `{"error": "..."}` shape as every other response.
+Every handler's request-body extractor (`Json<Body>` → `AppJson<Body>`)
+was updated across `auth.rs`, `listings.rs`, `demands.rs`, and
+`transactions.rs` — 8 usages in total. Response-side `Json<T>` (return
+types) is untouched; only the request-extraction path changed.
+
+Verified: malformed JSON, an invalid `role`/`status` enum value, and a
+missing/wrong `Content-Type` header all now return `{"error": "..."}`
+with their original status code unchanged. Valid requests and existing
+hand-written errors (e.g. duplicate email → `409`) are unaffected.
+`cargo test` passes.
 
 ---
 

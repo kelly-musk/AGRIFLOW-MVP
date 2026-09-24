@@ -1,5 +1,6 @@
 use axum::{
     Json,
+    extract::rejection::JsonRejection,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -23,6 +24,19 @@ pub enum AppError {
     Jwt(#[from] jsonwebtoken::errors::Error),
     #[error("internal server error")]
     Internal(#[from] anyhow::Error),
+    /// Catch-all for framework-level request rejections (malformed JSON body,
+    /// invalid enum value, wrong Content-Type) that would otherwise bypass
+    /// AppError entirely and return a plain-text body instead of the
+    /// `{"error": ...}` shape every other response uses. Carries whatever
+    /// status the rejection itself specifies rather than hardcoding one.
+    #[error("{1}")]
+    Rejection(StatusCode, String),
+}
+
+impl From<JsonRejection> for AppError {
+    fn from(rejection: JsonRejection) -> Self {
+        AppError::Rejection(rejection.status(), rejection.body_text())
+    }
 }
 
 impl IntoResponse for AppError {
@@ -51,6 +65,7 @@ impl IntoResponse for AppError {
                     "An internal error occurred.".to_string(),
                 )
             }
+            AppError::Rejection(status, m) => (*status, m.clone()),
         };
 
         (status, Json(json!({ "error": message }))).into_response()

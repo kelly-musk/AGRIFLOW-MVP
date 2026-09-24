@@ -7,6 +7,7 @@ use std::str::FromStr;
 use crate::auth::AuthUser;
 use crate::error::{AppError, AppResult};
 use crate::ids;
+use crate::json_extractor::AppJson;
 use crate::models::listing::SupplyListing;
 use crate::models::transaction::{
     CreateTransactionRequest, MockPaymentFailRequest, Transaction, TransactionEvent,
@@ -28,7 +29,7 @@ fn role_to_actor(role: UserRole) -> Actor {
 pub async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(body): Json<CreateTransactionRequest>,
+    AppJson(body): AppJson<CreateTransactionRequest>,
 ) -> AppResult<Json<TransactionWithHistory>> {
     auth.require_role(UserRole::Buyer)?;
 
@@ -222,7 +223,7 @@ pub async fn transition(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<String>,
-    Json(body): Json<TransitionRequest>,
+    AppJson(body): AppJson<TransitionRequest>,
 ) -> AppResult<Json<TransactionWithHistory>> {
     let txn = load_transaction(&state, &id).await?;
 
@@ -424,7 +425,7 @@ pub async fn mock_fail_payment(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<String>,
-    Json(body): Json<MockPaymentFailRequest>,
+    AppJson(body): AppJson<MockPaymentFailRequest>,
 ) -> AppResult<Json<TransactionWithHistory>> {
     let txn = load_transaction(&state, &id).await?;
     assert_is_buyer_on_txn(&auth, &txn)?;
