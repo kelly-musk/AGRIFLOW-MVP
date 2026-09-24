@@ -28,24 +28,29 @@ be treated as a punch list.
 
 ## Required changes (blocking)
 
-### 1. Four endpoints require no authentication at all — ✅ FIXED (2026-09-24)
+### 1. Four endpoints require no authentication at all — ⚠️ REVISITED (2026-09-24), now intentionally public
 `GET /listings`, `GET /listings/{id}`, `GET /demands`, `GET /demands/{id}`.
-Flagged as undesirable for this product. Fixed by adding the `auth:
-AuthUser` extractor to all four handlers — any authenticated role (buyer,
-supplier, logistics, admin) can now browse, but an anonymous caller gets
-`401 Missing Authorization header.`. No role restriction beyond "must be
-logged in," since both buyers and suppliers legitimately need to browse
-both listings and demands. Verified: unauthenticated requests to all four
-routes now 401; authenticated requests (any role) succeed unchanged.
-See the updated API surface table in `README.md`.
 
-A resource-key-based gate (a secret issued by the backend, separate from
-user login) was considered and deliberately rejected in favor of this
-simpler fix — see discussion history for the reasoning: a statically
+Originally flagged as undesirable for this product and fixed by requiring
+the `auth: AuthUser` extractor (any authenticated role could browse, an
+anonymous caller got `401`). A resource-key-based gate was considered and
+deliberately rejected in favor of that fix at the time — a statically
 embedded key in a public SPA build is trivially extractable from the
 browser bundle regardless of expiry, and a dynamically-issued key with no
-credential check on issuance doesn't stop scripted abuse either. User-role
-gating was judged sufficient for now.
+credential check on issuance doesn't stop scripted abuse either.
+
+Revisited after a direct check of what these endpoints actually return:
+only marketplace-facing fields (`supplierName`/`buyerName`, commodity,
+quantity, price, location, description/notes) — no email, phone, or any
+contact info, which lives exclusively on `User`/`UserPublic` and is never
+returned by these routes. With no data-exposure risk identified, requiring
+login just to browse what's for sale was judged to be pure sign-up
+friction with no corresponding security benefit, so the `AuthUser`
+requirement was removed again. **If "undesirable for this product" in the
+original note above was referring to a business reason rather than a
+security one, that reasoning wasn't re-examined here** — flagged for a
+maintainer sanity check. See the updated API surface table in
+`README.md`.
 
 ### 2. Decimal fields serialize as JSON strings, not numbers — ✅ FIXED (2026-09-24)
 `quantity`, `pricePerUnit`, `totalAmount`, and `indicativeBudget` all came
