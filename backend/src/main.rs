@@ -1,4 +1,5 @@
 mod auth;
+mod bachs;
 mod config;
 mod email;
 mod error;
@@ -31,7 +32,12 @@ async fn main() -> anyhow::Result<()> {
 
     let addr = config.server_addr;
     let mailer = email::Mailer::new(config.resend_api_key.clone(), config.email_from.clone());
-    let state = AppState { db, config, mailer };
+    let bachs = bachs::BachsClient::new(
+        config.bachs_secret_key.clone(),
+        config.bachs_api_url.clone(),
+        config.bachs_webhook_secret.clone(),
+    );
+    let state = AppState { db, config, mailer, bachs };
     let app = routes::build(state);
 
     tracing::info!("agriflow-api listening on {addr}");

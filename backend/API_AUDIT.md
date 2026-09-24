@@ -151,6 +151,74 @@ these specific cases. Fix: add a custom JSON-rejection handler (or a
 `FromRequest` wrapper around `Json<T>`) so every error path returns the
 same shape.
 
+### 7. Bachs.io (Naira) payments had no real settlement verification — ✅ FIXED (2026-09-24)
+Found during a follow-up review of the payments work above, not part of
+the original audit pass. The frontend called Bachs.io's checkout-session
+API **directly from the browser**, using a hardcoded API secret key and
+webhook signing secret in `src/lib/bachs.ts` — both committed in a public
+repo. Separately from that exposure: even with valid credentials, the
+return flow (`?payment=success` on the checkout redirect) was **unverified
+self-attestation**, the same class of bug as item 3's original exploit,
+just relocated. A buyer could skip Bachs's checkout page entirely and
+either hit the redirect URL directly or call
+`POST /transactions/:id/payment/confirm` themselves — nothing checked with
+Bachs that Naira actually moved. Confirmed this concretely: the mock
+confirm endpoint has no path-of-truth to Bachs at all.
+
+Fixed with a proper server-side integration:
+- **Checkout session creation moved server-side**
+  (`POST /transactions/:id/payment/bachs/checkout-session`, buyer-scoped)
+  — the secret key (`BACHS_SECRET_KEY`) now lives only in backend env vars
+  and never reaches the browser. Verified against the **real Bachs sandbox
+  API**, not a mock: returned a genuine `checkout_id`/`checkout_url` pair.
+- **A real webhook listener** (`POST /webhooks/bachs`, public, no JWT —
+  Bachs has no user session to present) verifies the HMAC-SHA256 signature
+  over the raw request body per Bachs's own spec
+  (`X-Bachs-Signature-V2` / `X-Bachs-Timestamp`, 300s replay tolerance,
+  `src/bachs.rs`) before trusting anything in the payload. This is now the
+  **only** path that can confirm a Bachs-sourced payment.
+- **`mock_confirm_payment` now refuses any payment with `provider =
+  "Bachs"`** (`409`) — closes the self-attestation hole directly rather
+  than just adding a parallel "more correct" path alongside the old
+  forgeable one.
+- 5 new unit tests on the signature verification itself (valid signature,
+  wrong secret, tampered body, stale timestamp, malformed input) — this is
+  the security-critical piece, so it gets direct test coverage rather than
+  only end-to-end checks.
+
+Verified end-to-end against the real Bachs sandbox, not mocked: created a
+real checkout session; confirmed a buyer calling `payment/confirm`
+directly on a Bachs-sourced payment is refused (`409`); a forged webhook
+signature is rejected (`401`); a correctly-signed webhook (computed
+exactly per Bachs's documented scheme) settles the payment and drives the
+transaction to `LOGISTICS_PENDING`; a re-delivered webhook is idempotent;
+an unknown `checkout_id` is acknowledged rather than erroring (so Bachs
+doesn't retry forever); a `collection.failed` webhook correctly marks the
+payment `FAILED` and the transaction `PAYMENT_FAILED`. `cargo test` passes
+(15 tests, 5 new).
+
+**Not fixed, deliberately out of scope here**: the frontend still calls
+the *old* browser-to-Bachs client directly (`src/lib/bachs.ts`) and the
+`?payment=success` redirect handler still calls `confirm()` client-side.
+Wiring the frontend to the new backend endpoints — and changing the
+redirect handler to poll for the webhook's result instead of trusting the
+query param — is the necessary next step; this fix alone means that old
+frontend path will now correctly fail closed (`409`) rather than silently
+"succeeding," but the UI won't reflect real payment status until that
+frontend work lands.
+
+**Also carried over from before this fix, unresolved**: the credential
+exposure itself. `BACHS_SECRET_KEY` and `BACHS_WEBHOOK_SECRET` still
+default to the same values already public in `src/lib/bachs.ts` and this
+repo's git history — per the maintainer, these are intentionally shared/
+reusable team credentials, not treated as a leak requiring rotation. Worth
+being precise about what that does and doesn't cover: it's a reasonable
+call for the API key (limits blast radius to "abuse of a shared sandbox
+account," not a live financial account). The webhook secret is a
+different risk class — if it stays public, anyone who reads this repo can
+forge a validly-signed webhook, which fully defeats the verification this
+fix just built. Flagged explicitly; the maintainer's call to make.
+
 ---
 
 ## Recommended (not blocking, but standard practice before production)

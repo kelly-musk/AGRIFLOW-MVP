@@ -8,7 +8,10 @@ use crate::auth::AuthUser;
 use crate::error::{AppError, AppResult};
 use crate::ids;
 use crate::models::listing::SupplyListing;
-use crate::models::payment::{ConfirmPaymentRequest, InitiatePaymentRequest, Payment};
+use crate::models::payment::{
+    ConfirmPaymentRequest, CreateBachsSessionRequest, CreateBachsSessionResponse,
+    InitiatePaymentRequest, Payment,
+};
 use crate::models::transaction::{
     CreateTransactionRequest, MockPaymentFailRequest, Transaction, TransactionEvent,
     TransactionWithHistory, TransitionRequest,
@@ -377,12 +380,92 @@ async fn payment_for_txn(state: &AppState, transaction_id: &str) -> AppResult<Op
     Ok(sqlx::query_as!(
         Payment,
         r#"SELECT id, transaction_id, payer_id, amount, currency, provider, provider_reference,
-                  stellar_tx_hash, status, failure_reason, created_at, updated_at, completed_at
+                  stellar_tx_hash, bachs_session_id, status, failure_reason, created_at, updated_at, completed_at
            FROM payments WHERE transaction_id = $1"#,
         transaction_id,
     )
     .fetch_optional(&state.db)
     .await?)
+}
+
+async fn payment_by_bachs_session(state: &AppState, checkout_id: &str) -> AppResult<Option<Payment>> {
+    Ok(sqlx::query_as!(
+        Payment,
+        r#"SELECT id, transaction_id, payer_id, amount, currency, provider, provider_reference,
+                  stellar_tx_hash, bachs_session_id, status, failure_reason, created_at, updated_at, completed_at
+           FROM payments WHERE bachs_session_id = $1"#,
+        checkout_id,
+    )
+    .fetch_optional(&state.db)
+    .await?)
+}
+
+/// Shared settlement core: marks a payment CONFIRMED (if not already) and
+/// drives the transaction PaymentConfirmed -> LogisticsPending. Idempotent.
+/// Used by both `mock_confirm_payment` (buyer-facing, only for rails with
+/// no real provider) and the Bachs webhook handler (the only legitimate
+/// confirmation path once a payment's provider is Bachs).
+async fn settle_payment(
+    state: &AppState,
+    transaction_id: &str,
+    payment_id: &str,
+    provider_reference: Option<String>,
+    stellar_tx_hash: Option<String>,
+) -> AppResult<TransactionWithHistory> {
+    let txn = load_transaction(state, transaction_id).await?;
+
+    let current_status: String =
+        sqlx::query_scalar!("SELECT status FROM payments WHERE id = $1", payment_id)
+            .fetch_one(&state.db)
+            .await?;
+
+    if current_status != "CONFIRMED" {
+        let reference = provider_reference.unwrap_or_else(ids::provider_reference);
+        sqlx::query!(
+            r#"UPDATE payments SET
+                 status = 'CONFIRMED',
+                 provider_reference = COALESCE(provider_reference, $2),
+                 stellar_tx_hash = COALESCE($3, stellar_tx_hash),
+                 completed_at = COALESCE(completed_at, now()),
+                 updated_at = now()
+               WHERE id = $1"#,
+            payment_id,
+            reference,
+            stellar_tx_hash,
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
+    // Idempotent: a retry (network hiccup, double-click, a re-delivered
+    // webhook) after the transaction already reached LOGISTICS_PENDING must
+    // not fail -- the transitions below aren't valid to run twice (Postgres
+    // would reject LOGISTICS_PENDING -> PAYMENT_CONFIRMED as illegal), so
+    // just return the already-settled state.
+    if txn.status == "LOGISTICS_PENDING" {
+        let history = history_for(state, transaction_id).await?;
+        return Ok(TransactionWithHistory { transaction: txn, history });
+    }
+
+    let mut db_tx = state.db.begin().await?;
+    apply_system_transition(
+        &mut db_tx,
+        transaction_id,
+        TransactionStatus::PaymentConfirmed,
+        "Payment confirmed.",
+    )
+    .await?;
+    let transaction = apply_system_transition(
+        &mut db_tx,
+        transaction_id,
+        TransactionStatus::LogisticsPending,
+        "Logistics job queued.",
+    )
+    .await?;
+    db_tx.commit().await?;
+
+    let history = history_for(state, transaction_id).await?;
+    Ok(TransactionWithHistory { transaction, history })
 }
 
 /// Creates the pending payment record for a transaction the buyer is about
@@ -420,7 +503,7 @@ pub async fn initiate_payment(
         INSERT INTO payments (id, transaction_id, payer_id, amount, currency, status)
         VALUES ($1, $2, $3, $4, $5, 'PENDING')
         RETURNING id, transaction_id, payer_id, amount, currency, provider, provider_reference,
-                  stellar_tx_hash, status, failure_reason, created_at, updated_at, completed_at
+                  stellar_tx_hash, bachs_session_id, status, failure_reason, created_at, updated_at, completed_at
         "#,
         payment_id,
         id,
@@ -439,21 +522,11 @@ pub async fn initiate_payment(
 }
 
 /// Settles the mock escrow payment for a transaction the buyer initiated,
-/// then immediately queues it for logistics.
-///
-/// There is no real payment provider integrated yet (see backend/README.md
-/// "Not built yet" — escrow/payments is the next slice) and no service/
-/// webhook credential mechanism exists either, so the state machine's
-/// `PAYMENT_CONFIRMED`/`LOGISTICS_PENDING` transitions — which require
-/// `Actor::System` — could not be reached by any real caller: JWT roles map
-/// only to Buyer/Supplier/Logistics/Admin, never System. This endpoint is
-/// the one legitimate place that gap is bridged: it's gated to exactly the
-/// buyer who owns the transaction, only from `PAYMENT_PENDING`, and it
-/// performs the *same* system-actor transitions a real payment webhook
-/// would trigger once one exists — it does not loosen the state machine's
-/// actor table itself, and POST /transactions/:id/transition still rejects
-/// these on any role, System included, since nothing can present System's
-/// credentials there.
+/// then immediately queues it for logistics. Only for rails with no real
+/// provider verification yet -- **not** for Bachs-sourced payments, which
+/// can only be confirmed by `bachs_webhook` once Bachs itself confirms the
+/// money moved (see that handler's doc comment for why letting the buyer
+/// confirm their own Bachs payment would be a real, provable exploit).
 ///
 /// The amount/currency being settled are never taken from the request body
 /// here -- only from the payment row `initiate_payment` already created.
@@ -472,55 +545,147 @@ pub async fn mock_confirm_payment(
         .await?
         .ok_or_else(|| AppError::BadRequest("Call payment/initiate before confirming.".into()))?;
 
-    if payment.status != "CONFIRMED" {
-        let provider_reference = payment.provider_reference.unwrap_or_else(ids::provider_reference);
-        sqlx::query!(
-            r#"UPDATE payments SET
-                 status = 'CONFIRMED',
-                 provider = COALESCE($2, provider),
-                 provider_reference = $3,
-                 stellar_tx_hash = COALESCE($4, stellar_tx_hash),
-                 completed_at = COALESCE(completed_at, now()),
-                 updated_at = now()
-               WHERE id = $1"#,
-            payment.id,
-            body.provider,
-            provider_reference,
-            body.stellar_tx_hash,
-        )
-        .execute(&state.db)
+    if payment.provider == "Bachs" {
+        return Err(AppError::Conflict(
+            "Bachs payments are confirmed automatically once payment completes -- they can't be confirmed directly.".into(),
+        ));
+    }
+
+    let result = settle_payment(&state, &id, &payment.id, None, body.stellar_tx_hash).await?;
+    Ok(Json(result))
+}
+
+/// Creates a Bachs.io hosted checkout session server-side. The secret key
+/// never reaches the browser -- the frontend gets back only the checkout
+/// URL to redirect to. Marks the payment's provider as `Bachs`, which is
+/// what makes `mock_confirm_payment` refuse to confirm it directly.
+pub async fn create_bachs_checkout_session(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<String>,
+    Json(body): Json<CreateBachsSessionRequest>,
+) -> AppResult<Json<CreateBachsSessionResponse>> {
+    let txn = load_transaction(&state, &id).await?;
+    assert_is_buyer_on_txn(&auth, &txn)?;
+
+    let payment = payment_for_txn(&state, &id)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("Call payment/initiate before starting checkout.".into()))?;
+
+    if payment.status == "CONFIRMED" {
+        return Err(AppError::Conflict("Payment already confirmed.".into()));
+    }
+
+    let user = sqlx::query!("SELECT email, name FROM users WHERE id = $1", auth.user_id)
+        .fetch_one(&state.db)
         .await?;
+
+    let success_url = body.success_url.unwrap_or_else(|| {
+        format!("https://agri-flowmvp.vercel.app/app/transactions/{id}?payment=success")
+    });
+    let cancel_url = body.cancel_url.unwrap_or_else(|| {
+        format!("https://agri-flowmvp.vercel.app/app/transactions/{id}/pay?payment=cancelled")
+    });
+
+    let session = state
+        .bachs
+        .create_checkout_session(
+            payment.amount,
+            &payment.currency,
+            &user.email,
+            &user.name,
+            success_url,
+            cancel_url,
+            &id,
+        )
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Bachs checkout session creation failed: {e}")))?;
+
+    sqlx::query!(
+        "UPDATE payments SET provider = 'Bachs', bachs_session_id = $2, updated_at = now() WHERE id = $1",
+        payment.id,
+        session.checkout_id,
+    )
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(CreateBachsSessionResponse { checkout_url: session.checkout_url }))
+}
+
+/// Bachs webhook receiver -- public, no JWT (Bachs has no user session to
+/// present). This is the **only** legitimate way a Bachs-sourced payment
+/// gets confirmed: `mock_confirm_payment` explicitly refuses payments with
+/// `provider = 'Bachs'`, because trusting the buyer's own request (or the
+/// checkout redirect's `?payment=success` query param, which is just as
+/// forgeable) would let a buyer mark their own payment confirmed without
+/// ever paying -- exactly the class of exploit already closed once for the
+/// generic transition endpoint. See API_AUDIT.md.
+///
+/// Verifies the HMAC-SHA256 signature over the raw body before parsing
+/// anything (see bachs.rs), and always returns 200 once a delivery is
+/// understood (even for an unknown checkout_id, or an event type this app
+/// doesn't act on) so Bachs doesn't retry forever -- only a bad signature
+/// is rejected.
+pub async fn bachs_webhook(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> AppResult<axum::http::StatusCode> {
+    let signature = headers
+        .get("X-Bachs-Signature-V2")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let timestamp = headers
+        .get("X-Bachs-Timestamp")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if !state.bachs.verify_webhook(&body, signature, timestamp) {
+        return Err(AppError::Unauthorized("Invalid webhook signature.".into()));
     }
 
-    // Idempotent: a retry (network hiccup, double-click) after the
-    // transaction already reached LOGISTICS_PENDING must not fail -- the
-    // transitions below aren't valid to run twice (Postgres would reject
-    // LOGISTICS_PENDING -> PAYMENT_CONFIRMED as an illegal move), so just
-    // return the already-settled state.
-    if txn.status == "LOGISTICS_PENDING" {
-        let history = history_for(&state, &id).await?;
-        return Ok(Json(TransactionWithHistory { transaction: txn, history }));
+    let event: crate::bachs::WebhookEvent = serde_json::from_slice(&body)
+        .map_err(|e| AppError::BadRequest(format!("Malformed webhook payload: {e}")))?;
+
+    let Some(checkout_id) = event.data.checkout_id else {
+        return Ok(axum::http::StatusCode::OK);
+    };
+
+    let Some(payment) = payment_by_bachs_session(&state, &checkout_id).await? else {
+        tracing::warn!(checkout_id, "bachs webhook for unknown checkout session");
+        return Ok(axum::http::StatusCode::OK);
+    };
+
+    match event.event_type.as_str() {
+        "collection.succeeded" => {
+            settle_payment(&state, &payment.transaction_id, &payment.id, Some(checkout_id), None).await?;
+        }
+        "collection.failed" | "collection.expired" if payment.status != "CONFIRMED" => {
+            sqlx::query!(
+                "UPDATE payments SET status = 'FAILED', failure_reason = $2, updated_at = now() WHERE id = $1",
+                payment.id,
+                event.event_type,
+            )
+            .execute(&state.db)
+            .await?;
+
+            let mut db_tx = state.db.begin().await?;
+            // Best-effort: a webhook re-delivered after the transaction
+            // moved on for some other reason shouldn't turn into a 500 that
+            // makes Bachs retry indefinitely.
+            let _ = apply_system_transition(
+                &mut db_tx,
+                &payment.transaction_id,
+                TransactionStatus::PaymentFailed,
+                &format!("Payment failed via Bachs webhook: {}", event.event_type),
+            )
+            .await;
+            let _ = db_tx.commit().await;
+        }
+        _ => {}
     }
 
-    let mut db_tx = state.db.begin().await?;
-    apply_system_transition(
-        &mut db_tx,
-        &id,
-        TransactionStatus::PaymentConfirmed,
-        "Payment confirmed (mock escrow).",
-    )
-    .await?;
-    let transaction = apply_system_transition(
-        &mut db_tx,
-        &id,
-        TransactionStatus::LogisticsPending,
-        "Logistics job queued.",
-    )
-    .await?;
-    db_tx.commit().await?;
-
-    let history = history_for(&state, &id).await?;
-    Ok(Json(TransactionWithHistory { transaction, history }))
+    Ok(axum::http::StatusCode::OK)
 }
 
 /// Marks the mock escrow payment as failed. See `mock_confirm_payment` for

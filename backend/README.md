@@ -83,13 +83,37 @@ All routes are under `/api`.
 | GET    | `/transactions`                     | any                 | Role-scoped: buyer/supplier see their own, admin sees all |
 | GET    | `/transactions/:id`                  | participant or admin | Includes full event history |
 | POST   | `/transactions/:id/transition`        | participant (role-gated by state machine) | `{ "to": "ACCEPTED", "note": "..." }` |
+| GET    | `/transactions/:id/payment`           | participant or admin | The payment row for this transaction, if any yet (`null` before `payment/initiate`) |
+| POST   | `/transactions/:id/payment/initiate`  | buyer              | Creates a `PENDING` payment row: `{ "amount": ..., "currency": "NGN" }`. Idempotent |
+| POST   | `/transactions/:id/payment/confirm`   | buyer              | Settles a **non-Bachs** payment (mock escrow / on-chain-verified paths). Refuses `409` if `payment.provider == "Bachs"` — see below |
+| POST   | `/transactions/:id/payment/fail`      | buyer              | `{ "reason": "..." }` |
+| POST   | `/transactions/:id/payment/bachs/checkout-session` | buyer | Creates a Bachs.io hosted checkout session server-side (secret key never reaches the browser); returns `{ "checkoutUrl": "..." }`. Sets `payment.provider = "Bachs"` |
+| POST   | `/webhooks/bachs`                     | none (HMAC-verified) | Bachs's server-to-server webhook. The **only** legitimate way a Bachs-sourced payment gets confirmed — see "Payments & escrow" below |
+
+## Payments & escrow
+
+Three payment rails exist, at different levels of real verification:
+
+- **Bachs.io (Naira)** — real. Checkout session creation happens server-side
+  (`src/bachs.rs`), and confirmation only ever happens via the signature-
+  verified webhook (`bachs_webhook` in `src/routes/transactions.rs`), never
+  via a buyer's own request or the checkout redirect's `?payment=success`
+  query param (which is just as forgeable). `mock_confirm_payment` explicitly
+  refuses any payment whose `provider` is `Bachs`.
+- **Mock escrow (everything else)** — `mock_confirm_payment`/
+  `mock_fail_payment` are buyer-scoped, self-reported settlement with no
+  external verification, for rails with no real provider integrated yet
+  (e.g. the current USDC/NEAR-intents path). This is intentionally a mock —
+  don't confuse "buyer-scoped" with "verified."
+- **Stellar/Soroban on-chain** — `payments.stellar_tx_hash` can record a
+  real on-chain transaction hash, but nothing currently *verifies* it
+  against the chain before confirming (that would mean calling
+  `get_trade` on the Soroban contract server-side, same category of fix as
+  the Bachs webhook). Recording the hash is a real improvement over losing
+  it in React state on refresh; it is not yet the same as verification.
 
 ## Not built yet (next slices)
 
-- **Escrow/payments** — this is the big one. Plan is an `EscrowProvider`
-  trait with a `MockEscrow` implementation first (so payment endpoints work
-  end-to-end today), swapped for a real on-chain (USDC) implementation once
-  a contract exists.
 - **Logistics jobs** — provider assignment, milestone updates, proof of
   delivery. The state machine already supports these statuses
   (`LOGISTICS_ASSIGNED`, `IN_TRANSIT`, etc.); only the `logistics_jobs`
@@ -98,6 +122,7 @@ All routes are under `/api`.
   data model are ready to extend, tables/endpoints aren't built.
 - **Matching engine** — the weighted scoring algorithm from
   `matchingService.ts` hasn't been ported.
+- **On-chain payment verification** — see "Payments & escrow" above.
 
 ## Environment variables
 
@@ -113,6 +138,9 @@ See `.env.example`. `JWT_SECRET` must be changed before any real deployment
 | `ADMIN_REGISTRATION_KEY` | no | Registering `role: admin` requires sending this value as the `X-Admin-Registration-Key` header. Unset → no admin can register. The seed and integration-test scripts read it from the same env var name |
 | `RESEND_API_KEY` | no | [Resend](https://resend.com) key for the welcome email sent on registration. Unset → emails are skipped (logged) |
 | `EMAIL_FROM` | no | Sender address. Defaults to Resend's test sender `onboarding@resend.dev`, which only delivers to the Resend account owner — verify a domain in Resend and set this before sending to real users |
+| `BACHS_SECRET_KEY` | no | [Bachs.io](https://docs.bachs.io) API secret key. Defaults to the shared sandbox key already in the frontend's `src/lib/bachs.ts` — intentionally reusable team credentials per the maintainer, not a per-deployment secret |
+| `BACHS_API_URL` | no | Defaults to the Bachs sandbox checkout-sessions endpoint |
+| `BACHS_WEBHOOK_SECRET` | no | Verifies incoming webhook signatures (HMAC-SHA256). Defaults to the shared sandbox webhook secret. Must match whatever's configured on the Bachs webhook endpoint if that's ever regenerated |
 
 Welcome emails are sent in the background after the account is created, so
 an email failure never fails a registration — check the logs for
