@@ -14,6 +14,7 @@ pub struct Payment {
     pub provider: String,
     pub provider_reference: Option<String>,
     pub stellar_tx_hash: Option<String>,
+    pub bachs_session_id: Option<String>,
     pub status: String,
     pub failure_reason: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -31,6 +32,23 @@ pub struct InitiatePaymentRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfirmPaymentRequest {
-    pub provider: Option<String>,
     pub stellar_tx_hash: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateBachsSessionRequest {
+    /// The frontend's own origin (e.g. `window.location.origin`), used to
+    /// build the success/cancel redirect URLs. Only ever used as a redirect
+    /// target -- the redirect itself carries no authority in this design,
+    /// since payment confirmation only ever happens via the verified
+    /// webhook, never the redirect.
+    pub success_url: Option<String>,
+    pub cancel_url: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateBachsSessionResponse {
+    pub checkout_url: String,
 }

@@ -13,6 +13,14 @@ pub struct Config {
     pub resend_api_key: Option<String>,
     /// Sender for outgoing email, e.g. `AgriFlow <hello@yourdomain.com>`.
     pub email_from: String,
+    /// Bachs.io API secret key, sandbox base URL, and webhook signing
+    /// secret. Defaults match the shared sandbox credentials already in
+    /// `src/lib/bachs.ts` on the frontend -- these are intentionally
+    /// reusable team credentials, not per-deployment secrets, per the
+    /// maintainer. Override via env var if that ever changes.
+    pub bachs_secret_key: String,
+    pub bachs_api_url: String,
+    pub bachs_webhook_secret: String,
 }
 
 impl Config {
@@ -42,6 +50,15 @@ impl Config {
         let email_from =
             non_empty("EMAIL_FROM").unwrap_or_else(|| "AgriFlow <onboarding@resend.dev>".into());
 
+        let bachs_secret_key = non_empty("BACHS_SECRET_KEY").unwrap_or_else(|| {
+            "sk_sandbox_26a417c6_wjB3o7PUihDiKg3ms3yUeaFRJl3ZORJQaoPYqMtdbdw".into()
+        });
+        let bachs_api_url = non_empty("BACHS_API_URL")
+            .unwrap_or_else(|| "https://sandbox-api.bachs.io/v1/checkout-sessions".into());
+        let bachs_webhook_secret = non_empty("BACHS_WEBHOOK_SECRET").unwrap_or_else(|| {
+            "whsec_5cf64ff36a53cbb8e342b4e2bd204f63101c5800db9c1771ccba8adbd53265a3".into()
+        });
+
         Ok(Self {
             database_url,
             jwt_secret,
@@ -50,6 +67,9 @@ impl Config {
             admin_registration_key,
             resend_api_key,
             email_from,
+            bachs_secret_key,
+            bachs_api_url,
+            bachs_webhook_secret,
         })
     }
 }

@@ -27,6 +27,13 @@ pub fn build(state: AppState) -> Router {
         .route("/transactions/{id}/payment/initiate", post(transactions::initiate_payment))
         .route("/transactions/{id}/payment/confirm", post(transactions::mock_confirm_payment))
         .route("/transactions/{id}/payment/fail", post(transactions::mock_fail_payment))
+        .route(
+            "/transactions/{id}/payment/bachs/checkout-session",
+            post(transactions::create_bachs_checkout_session),
+        )
+        // Public: Bachs calls this directly, with no user session to present.
+        // Protected instead by HMAC signature verification -- see bachs.rs.
+        .route("/webhooks/bachs", post(transactions::bachs_webhook))
         .with_state(state);
 
     Router::new()
