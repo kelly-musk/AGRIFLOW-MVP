@@ -18,9 +18,10 @@ pub struct DemandQuery {
     pub status: Option<String>,
 }
 
+/// Public: browsing open demand -- same reasoning as listings::list_active.
+/// Returns only marketplace-facing fields, no contact info.
 pub async fn list_open(
     State(state): State<AppState>,
-    _auth: AuthUser,
     Query(q): Query<DemandQuery>,
 ) -> AppResult<Json<Vec<DemandRequest>>> {
     let status = q.status.unwrap_or_else(|| "open".to_string());
@@ -67,9 +68,9 @@ pub async fn mine(
     Ok(Json(demands))
 }
 
+/// Public, same reasoning as `list_open`.
 pub async fn get_one(
     State(state): State<AppState>,
-    _auth: AuthUser,
     Path(id): Path<String>,
 ) -> AppResult<Json<DemandRequest>> {
     let demand = sqlx::query_as!(

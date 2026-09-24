@@ -18,9 +18,12 @@ pub struct ListingQuery {
     pub status: Option<String>,
 }
 
+/// Public: browsing what's for sale shouldn't require an account. This
+/// endpoint returns only marketplace-facing fields (see `SupplyListing`) --
+/// no email, phone, or other contact info -- so there's nothing gated by
+/// requiring a JWT here beyond making sign-up friction for lookers.
 pub async fn list_active(
     State(state): State<AppState>,
-    _auth: AuthUser,
     Query(q): Query<ListingQuery>,
 ) -> AppResult<Json<Vec<SupplyListing>>> {
     let status = q.status.unwrap_or_else(|| "active".to_string());
@@ -67,9 +70,9 @@ pub async fn mine(
     Ok(Json(listings))
 }
 
+/// Public, same reasoning as `list_active`.
 pub async fn get_one(
     State(state): State<AppState>,
-    _auth: AuthUser,
     Path(id): Path<String>,
 ) -> AppResult<Json<SupplyListing>> {
     let listing = sqlx::query_as!(

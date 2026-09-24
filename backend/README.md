@@ -70,15 +70,15 @@ All routes are under `/api`.
 | POST   | `/auth/register`              | —              | buyer / supplier / logistics; `admin` needs the `X-Admin-Registration-Key` header. Sends a welcome email |
 | POST   | `/auth/login`                 | —              | |
 | GET    | `/auth/me`                    | any            | |
-| GET    | `/listings`                   | any            | `?commodity=&status=` (default `status=active`) |
+| GET    | `/listings`                   | **public**     | `?commodity=&status=` (default `status=active`) — browsing doesn't require an account |
 | GET    | `/listings/mine`               | supplier        | |
 | POST   | `/listings`                    | supplier        | |
-| GET    | `/listings/:id`                | any             | |
+| GET    | `/listings/:id`                | **public**      | |
 | PATCH  | `/listings/:id`                 | supplier (owner) | |
-| GET    | `/demands`                       | any               | `?commodity=&status=` (default `status=open`) |
+| GET    | `/demands`                       | **public**        | `?commodity=&status=` (default `status=open`) — browsing doesn't require an account |
 | GET    | `/demands/mine`                  | buyer             | |
 | POST   | `/demands`                        | buyer             | |
-| GET    | `/demands/:id`                     | any                | |
+| GET    | `/demands/:id`                     | **public**         | |
 | POST   | `/transactions`                    | buyer              | Creates from a listing; validates stock |
 | GET    | `/transactions`                     | any                 | Role-scoped: buyer/supplier see their own, admin sees all |
 | GET    | `/transactions/:id`                  | participant or admin | Includes full event history |
