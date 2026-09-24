@@ -2,7 +2,7 @@ use chrono::{Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::models::user::UserRole;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,11 +33,16 @@ pub fn issue_token(
         iat: now.timestamp(),
         exp: (now + Duration::hours(expiry_hours)).timestamp(),
     };
+    // Mapped explicitly to Internal rather than letting `?` fall through to
+    // AppError::Jwt: that variant means "the caller's token is bad" (401),
+    // but a failure here is the server failing to mint a token for a caller
+    // who just authenticated successfully -- their fault, wrong status.
     let token = encode(
         &Header::default(),
         &claims,
         &EncodingKey::from_secret(secret.as_bytes()),
-    )?;
+    )
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("failed to issue auth token: {e}")))?;
     Ok(token)
 }
 

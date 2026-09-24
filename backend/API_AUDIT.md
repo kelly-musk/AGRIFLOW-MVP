@@ -91,6 +91,36 @@ these specific cases. Fix: add a custom JSON-rejection handler (or a
 `FromRequest` wrapper around `Json<T>`) so every error path returns the
 same shape.
 
+### 6a. Follow-up: two more error paths bypassed the JSON shape — ✅ FIXED (2026-09-24)
+A broader error-handling check after R6 turned up two more cases outside
+the `Json<T>` extractor that R6 didn't cover:
+
+- **Unmatched routes returned a bare empty-body `404`.** Axum's router-level
+  default, not going through `AppError` at all. Fixed by registering a
+  `.fallback(not_found)` handler on the top-level router
+  (`src/routes/mod.rs`) that returns `AppError::NotFound(...)`, so an
+  unmatched path now returns `{"error": "The requested resource was not
+  found."}` like everything else. (A parallel gap, wrong-method-on-an-
+  existing-route returning an empty `405`, was intentionally **not**
+  fixed — it's a per-route `MethodRouter` fallback in Axum's design, more
+  invasive to make consistent, and a bodiless 405 is fairly conventional
+  even in mature APIs. Left as a known, low-priority gap.)
+- **`AppError::Jwt` conflated two unrelated failure modes.** Both token
+  *validation* (`decode_token`, the client's fault if it fails → correctly
+  `401`) and token *issuance* (`issue_token`, called during login/register
+  — a *server* failure if it ever failed) flowed through the same variant,
+  always returning `401 Invalid or expired token.` A user who authenticated
+  correctly but hit a server-side signing failure would have been told
+  their own token was bad, with the wrong status class entirely. Fixed by
+  having `issue_token` (`src/auth/jwt.rs`) map its own failure explicitly
+  to `AppError::Internal` instead of relying on the automatic `?`
+  conversion; `decode_token` is unchanged. Low probability in practice
+  (would need the JWT-encode step itself to fail), but wrong in principle.
+
+Verified: `GET /api/does-not-exist` and a bare unmatched path outside
+`/api` both now return `{"error": "..."}` with `404`; login/register still
+succeed normally. `cargo test` passes.
+
 ---
 
 ## Recommended (not blocking, but standard practice before production)

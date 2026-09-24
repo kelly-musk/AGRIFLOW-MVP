@@ -7,7 +7,15 @@ use axum::{Router, routing::{get, post}};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
+use crate::error::AppError;
 use crate::state::AppState;
+
+/// Catches any request that matched no route at all, so an unmatched path
+/// returns the same `{"error": "..."}` shape as everything else instead of
+/// Axum's bare empty-body 404.
+async fn not_found() -> AppError {
+    AppError::NotFound("The requested resource was not found.".to_string())
+}
 
 pub fn build(state: AppState) -> Router {
     let api = Router::new()
@@ -29,6 +37,7 @@ pub fn build(state: AppState) -> Router {
 
     Router::new()
         .nest("/api", api)
+        .fallback(not_found)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
 }
