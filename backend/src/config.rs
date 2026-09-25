@@ -32,6 +32,25 @@ pub struct Config {
     /// `FRONTEND_BASE_URL` plus any in `S3_CORS_ORIGINS` (comma-separated,
     /// e.g. `http://localhost:5173`). Applied to the bucket at boot.
     pub storage_cors_origins: Vec<String>,
+    /// JSON-RPC HTTP endpoint for the chain AgriFlowEscrow is deployed on.
+    /// Defaults to a public Sepolia endpoint -- read-only log polling, no
+    /// API key or private key needed. See `chain.rs`.
+    pub chain_rpc_url: String,
+    /// AgriFlowEscrow's deployed address. Defaults to the real Sepolia
+    /// deployment (see docs/SMART_CONTRACT_SPEC_AND_GITHUB_ISSUES.md).
+    pub escrow_contract_address: String,
+    /// How often the indexer polls for new blocks.
+    pub chain_poll_interval_secs: u64,
+    /// First block to scan from on a cold start (no `indexer_cursor` row
+    /// yet). Defaults to the real AgriFlowEscrow deployment block on
+    /// Sepolia (11775184, confirmed live against
+    /// ethereum-sepolia-rpc.publicnode.com's `OwnershipTransferred` log at
+    /// construction) -- not block 0, and not found by probing `eth_getCode`
+    /// at historical heights, since public RPC nodes prune old state
+    /// (verified: that approach fails with `"state at block #... is
+    /// pruned"`). `eth_getLogs`, which is all the indexer otherwise uses,
+    /// doesn't have this problem.
+    pub chain_start_block: u64,
 }
 
 impl Config {
@@ -94,6 +113,17 @@ impl Config {
             )
             .collect();
 
+        let chain_rpc_url = non_empty("CHAIN_RPC_URL")
+            .unwrap_or_else(|| "https://ethereum-sepolia-rpc.publicnode.com".into());
+        let escrow_contract_address = non_empty("ESCROW_CONTRACT_ADDRESS")
+            .unwrap_or_else(|| "0x9E93B3ffF884b736fECEACa33d93f33aAfDdc6C5".into());
+        let chain_poll_interval_secs = non_empty("CHAIN_POLL_INTERVAL_SECS")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(15);
+        let chain_start_block = non_empty("CHAIN_START_BLOCK")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(11_775_184);
+
         Ok(Self {
             database_url,
             jwt_secret,
@@ -107,6 +137,10 @@ impl Config {
             frontend_base_url,
             storage,
             storage_cors_origins,
+            chain_rpc_url,
+            escrow_contract_address,
+            chain_poll_interval_secs,
+            chain_start_block,
         })
     }
 }

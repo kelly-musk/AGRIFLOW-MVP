@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE on_chain_trades SET status = 'REFUNDED', refunded_at = $2, updated_at = now() WHERE trade_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "80591b042a29f89002dee39d924a454bdb397b3c35f1fc22bcf7cb2e0a85edbe"
+}

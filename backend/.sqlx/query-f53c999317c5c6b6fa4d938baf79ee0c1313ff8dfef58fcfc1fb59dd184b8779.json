@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE transactions SET status = 'COMPLETED', updated_at = now()\n           WHERE on_chain_trade_id = $1 AND status <> 'COMPLETED'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f53c999317c5c6b6fa4d938baf79ee0c1313ff8dfef58fcfc1fb59dd184b8779"
+}

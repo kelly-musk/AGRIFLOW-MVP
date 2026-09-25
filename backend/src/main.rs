@@ -1,5 +1,6 @@
 mod auth;
 mod bachs;
+mod chain;
 mod config;
 mod email;
 mod error;
@@ -71,6 +72,7 @@ async fn main() -> anyhow::Result<()> {
         media::resume_processing(&state).await;
         media::spawn_cleanup(state.clone());
     }
+    chain::spawn_indexer(state.clone());
     let app = routes::build(state);
 
     tracing::info!("agriflow-api listening on {addr}");

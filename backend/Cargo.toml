@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+alloy = "2.5.0"
 anyhow = "1.0.104"
 argon2 = "0.6.0"
 axum = "0.8.9"

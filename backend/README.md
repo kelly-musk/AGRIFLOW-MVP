@@ -150,6 +150,52 @@ transaction's payment is confirmed (`mock_confirm_payment` /
 `logisticsService.createJobForTransaction`'s "called automatically after
 payment is confirmed" behavior -- there's no manual "create job" endpoint.
 
+### On-chain event indexer (issue #56)
+
+`chain.rs` polls `eth_getLogs` against `AgriFlowEscrow`'s real Sepolia
+deployment (see `contracts/evm/`, `docs/SMART_CONTRACT_SPEC_AND_GITHUB_ISSUES.md`)
+every `CHAIN_POLL_INTERVAL_SECS` (default 15s) and mirrors `TradeFunded`,
+`DeliveryConfirmed`, `FundsCredited`, `Withdrawn`, `TradeDisputed`, and
+`BuyerRefunded` into two new tables:
+
+- `on_chain_events` -- append-only, idempotent (unique on
+  `tx_hash`+`log_index`) raw log of every decoded event. This is the
+  payout receipt for `FundsCredited`/`Withdrawn` -- not duplicated into a
+  separate balances table, since `withdrawableBalances` is already
+  queryable on-chain via the contract's own `getWithdrawableBalance`.
+- `on_chain_trades` -- materialized current state per `tradeId`
+  (`FUNDED`/`COMPLETED`/`DISPUTED`/`REFUNDED`), kept in sync by replaying
+  events onto it. `TradeFunded` only carries the total amount, so the
+  goods/logistics/fee breakdown is fetched via one `getTrade()` contract
+  call per new trade rather than guessed.
+
+Read-only: no API key or private key needed, just a public RPC endpoint
+(defaults to `ethereum-sepolia-rpc.publicnode.com`). Verified live against
+the real deployment during development -- connects, paginates
+`eth_getLogs` in ≤50,000-block chunks (that endpoint's actual limit),
+persists a resumable cursor (`indexer_cursor`), and recovers cleanly from
+a real transient connection reset without crashing the process.
+
+**Two things issue #56 asks for that this deliberately doesn't do, and
+why**:
+- **"Update transaction status to COMPLETED"** -- the column to link an
+  on-chain `tradeId` back to a marketplace `transactions.id`
+  (`transactions.on_chain_trade_id`) exists now, but nothing populates it
+  yet: that requires issue #54 (the intent listener that actually calls
+  `fundTradeFromIntent`), which isn't built. The sync code is there and
+  correctly a no-op until a real link exists.
+- **Email/push notifications** -- would need a wallet-address-to-platform-
+  user mapping, which doesn't exist anywhere in this schema (`users` has
+  no wallet address column), plus in-app notifications have no
+  infrastructure at all yet (same gap as the audit log, below). Not
+  fabricated here.
+
+**Nothing to sync yet**: checked directly against the real contract --
+zero `TradeFunded` events have ever fired on it (only the constructor's
+`OwnershipTransferred`), since #54 doesn't exist to call
+`fundTradeFromIntent`. The indexer is verified working against live
+infrastructure; there's just no real trade data yet for it to move.
+
 ## Not built yet (next slices)
 
 - **Notifications, audit log** — state machine and data model are ready to
@@ -157,9 +203,9 @@ payment is confirmed" behavior -- there's no manual "create job" endpoint.
   from issue #33 isn't implemented for this reason -- there's no
   `audit_logs` table to back it yet, and the `require_role(Admin)` pattern
   `admin::list_users`/`set_verified` use is ready to reuse once it exists.
-- **Real on-chain escrow** — payments today are a mock escrow flow
-  (buyer-triggered settlement, see the payment endpoints above), not a
-  real payment provider or on-chain contract.
+- **Real on-chain escrow, buyer-side** — `fundTradeFromIntent` has no
+  caller yet (issue #54); the indexer above only reads what's already on
+  chain, it doesn't put anything there.
 - **Commodity inspection metadata** — tracked as issue #34.
 - **Matching engine** — the weighted scoring algorithm from
   `matchingService.ts` hasn't been ported.

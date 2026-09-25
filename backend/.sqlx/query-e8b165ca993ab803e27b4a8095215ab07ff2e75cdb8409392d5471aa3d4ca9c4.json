@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE on_chain_trades SET status = 'DISPUTED', disputed_at = $2, updated_at = now() WHERE trade_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e8b165ca993ab803e27b4a8095215ab07ff2e75cdb8409392d5471aa3d4ca9c4"
+}

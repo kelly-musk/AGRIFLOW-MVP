@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT last_block FROM indexer_cursor WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_block",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "indexer_cursor",
+            "name": "last_block"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "32e6d317cf0b231162e4c2cc051fb0e74ddb524d2ad28e022b674919338b4c6f"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO indexer_cursor (id, last_block) VALUES ($1, $2)\n               ON CONFLICT (id) DO UPDATE SET last_block = EXCLUDED.last_block",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "569853f2c342142c14d54e50c9d1d12c32c316325d543dd3c38c8e945e4109e1"
+}
