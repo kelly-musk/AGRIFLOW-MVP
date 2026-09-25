@@ -6,9 +6,9 @@ the business logic in the React app's `src/services/*`, so the frontend can
 be repointed from `localStorage` to HTTP calls without behavior changes.
 
 This slice covers **auth, users, admin, listings, demands, the transaction
-state machine, mock escrow payments, logistics job tracking, and disputes**.
-Notifications and the audit log are not built yet — see "Not built yet"
-below.
+state machine, mock escrow payments, logistics job tracking, disputes, and
+supplier/logistics wallet payouts**. Notifications and the audit log are
+not built yet — see "Not built yet" below.
 
 ## Stack
 
@@ -110,6 +110,8 @@ All routes are under `/api`.
 | POST   | `/disputes`                            | buyer (owner)        | `{ "transactionId": "...", "reason": "...", "description": "..." }`. Buyer-only: the transaction state machine's `DISPUTED` status only allows `Actor::Buyer` (see `disputes.rs` doc comment). Atomically transitions the transaction to `DISPUTED` |
 | GET    | `/disputes`                            | any                  | Admin sees all; buyer/supplier see disputes on transactions they're a party to |
 | POST   | `/disputes/:id/resolve`                | admin                | `{ "decision": "...", "outcome": "completed" \| "cancelled" }`. Atomically transitions the transaction to `COMPLETED` or `CANCELLED` |
+| GET    | `/wallet/summary`                      | supplier or logistics | `{ totalEarned, pendingEscrow, withdrawn, available, currency, completedCount }`. No real payout rail -- see below |
+| POST   | `/wallet/withdraw`                     | supplier or logistics | `{ "amount": 500000, "method": "bank_transfer" \| "crypto_usdc", "bankDetails": {...} }` (or `"stellarPublicKey"` for `crypto_usdc`). `400` if `amount` exceeds the freshly-recomputed `available` balance |
 
 Every listing response includes `media: [...]` (processing/ready items,
 cover first, then `sortOrder`), in the shape of the frontend's
@@ -150,6 +152,17 @@ transaction's payment is confirmed (`mock_confirm_payment` /
 `logisticsService.createJobForTransaction`'s "called automatically after
 payment is confirmed" behavior -- there's no manual "create job" endpoint.
 
+`/wallet/withdraw` doesn't call any real payout rail -- there's no NIBSS or
+on-chain minting integration in this codebase to call. `payoutTxHash` is a
+generated placeholder reference (`NIBSS_PAY_########` / `0x_payout_...`),
+matching the frontend's own fallback format for when its real on-chain
+mint attempt fails. Real payouts belong with the Web3 relayer/indexer work
+(issues #54-56), not reimplemented here. Withdrawal amount is checked
+against a freshly recomputed `available` balance inside a
+`pg_advisory_xact_lock`-protected transaction, so two concurrent
+withdrawal requests from the same user can't both read the same balance
+and jointly overdraw it.
+
 ## Not built yet (next slices)
 
 - **Notifications, audit log** — state machine and data model are ready to
@@ -157,9 +170,9 @@ payment is confirmed" behavior -- there's no manual "create job" endpoint.
   from issue #33 isn't implemented for this reason -- there's no
   `audit_logs` table to back it yet, and the `require_role(Admin)` pattern
   `admin::list_users`/`set_verified` use is ready to reuse once it exists.
-- **Real on-chain escrow** — payments today are a mock escrow flow
-  (buyer-triggered settlement, see the payment endpoints above), not a
-  real payment provider or on-chain contract.
+- **Real on-chain escrow and payouts** — payments and withdrawals today are
+  both mock flows (buyer-triggered settlement, generated payout
+  references), not a real payment provider or on-chain contract.
 - **Commodity inspection metadata** — tracked as issue #34.
 - **Matching engine** — the weighted scoring algorithm from
   `matchingService.ts` hasn't been ported.

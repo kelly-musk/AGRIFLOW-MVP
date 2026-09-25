@@ -1,0 +1,194 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO withdrawals\n            (id, user_id, user_name, user_role, amount, currency, method,\n             bank_name, account_number, account_name, stellar_public_key, status, payout_tx_hash)\n        VALUES ($1, $2, $3, $4, $5, 'NGN', $6, $7, $8, $9, $10, 'COMPLETED', $11)\n        RETURNING id, user_id, user_name, user_role, amount, currency, method,\n                  bank_name, account_number, account_name, stellar_public_key, status, payout_tx_hash, created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "withdrawals",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "withdrawals",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "user_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "withdrawals",
+            "name": "user_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "user_role",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "withdrawals",
+            "name": "user_role"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "amount",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "withdrawals",
+            "name": "amount"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "currency",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "withdrawals",
+            "name": "currency"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "method",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "withdrawals",
+            "name": "method"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "bank_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "withdrawals",
+            "name": "bank_name"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "account_number",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "withdrawals",
+            "name": "account_number"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "account_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "withdrawals",
+            "name": "account_name"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "stellar_public_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "withdrawals",
+            "name": "stellar_public_key"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "withdrawals",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "payout_tx_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "withdrawals",
+            "name": "payout_tx_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "withdrawals",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Numeric",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "ce787d2697ff5167accd009dbe2eb6fe6678709184a5250ff6f3ad02c4908303"
+}

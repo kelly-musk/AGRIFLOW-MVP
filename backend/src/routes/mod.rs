@@ -7,6 +7,7 @@ pub mod listings;
 pub mod logistics;
 pub mod media;
 pub mod transactions;
+pub mod wallet;
 pub mod webhooks;
 
 use axum::{Router, routing::{get, patch, post}};
@@ -52,6 +53,8 @@ pub fn build(state: AppState) -> Router {
         .route("/logistics/jobs/{id}/status", patch(logistics::update_status))
         .route("/disputes", get(disputes::list).post(disputes::raise))
         .route("/disputes/{id}/resolve", post(disputes::resolve))
+        .route("/wallet/summary", get(wallet::summary))
+        .route("/wallet/withdraw", post(wallet::withdraw))
         .with_state(state);
 
     Router::new()

@@ -27,9 +27,8 @@ impl AuthUser {
         Ok(())
     }
 
-    /// Reserved for the first endpoint that needs multi-role gating (e.g. an
-    /// admin-or-owner check) — no caller yet.
-    #[allow(dead_code)]
+    /// Multi-role gating -- e.g. `wallet::summary`/`withdraw`, open to both
+    /// Supplier and Logistics.
     pub fn require_any_role(&self, roles: &[UserRole]) -> AppResult<()> {
         if !roles.contains(&self.role) {
             return Err(AppError::Forbidden(

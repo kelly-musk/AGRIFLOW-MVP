@@ -6,3 +6,4 @@ pub mod logistics;
 pub mod payment;
 pub mod transaction;
 pub mod user;
+pub mod wallet;
