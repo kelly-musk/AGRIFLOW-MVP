@@ -63,7 +63,7 @@ pub async fn register(
             r#"
             INSERT INTO users (id, email, password_hash, name, role, organization_name, phone, location, verified, profile_complete)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, TRUE)
-            RETURNING id, email, password_hash, name, role as "role: _", organization_name, phone, location, verified, profile_complete, created_at, updated_at
+            RETURNING id, email, password_hash, name, role as "role: _", organization_name, phone, location, verified, profile_complete, wallet_address, created_at, updated_at
             "#,
             id,
             body.email,
@@ -122,7 +122,7 @@ pub async fn login(
     let user = sqlx::query_as!(
         User,
         r#"
-        SELECT id, email, password_hash, name, role as "role: _", organization_name, phone, location, verified, profile_complete, created_at, updated_at
+        SELECT id, email, password_hash, name, role as "role: _", organization_name, phone, location, verified, profile_complete, wallet_address, created_at, updated_at
         FROM users WHERE lower(email) = lower($1)
         "#,
         body.email
@@ -166,7 +166,7 @@ pub async fn admin_login(
     let user = sqlx::query_as!(
         User,
         r#"
-        SELECT id, email, password_hash, name, role as "role: _", organization_name, phone, location, verified, profile_complete, created_at, updated_at
+        SELECT id, email, password_hash, name, role as "role: _", organization_name, phone, location, verified, profile_complete, wallet_address, created_at, updated_at
         FROM users WHERE lower(email) = lower($1)
         "#,
         body.email
@@ -198,7 +198,7 @@ pub async fn me(State(state): State<AppState>, auth: AuthUser) -> AppResult<Json
     let user = sqlx::query_as!(
         User,
         r#"
-        SELECT id, email, password_hash, name, role as "role: _", organization_name, phone, location, verified, profile_complete, created_at, updated_at
+        SELECT id, email, password_hash, name, role as "role: _", organization_name, phone, location, verified, profile_complete, wallet_address, created_at, updated_at
         FROM users WHERE id = $1
         "#,
         auth.user_id

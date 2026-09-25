@@ -35,9 +35,14 @@ pub struct User {
     pub location: Option<String>,
     pub verified: bool,
     pub profile_complete: bool,
+    /// Self-attested EVM address (see routes/users.rs). Not
+    /// cryptographically verified -- a user can only set their own, so a
+    /// wrong or unowned address only ever costs that user, never lets them
+    /// redirect someone else's funds.
+    pub wallet_address: Option<String>,
     pub created_at: DateTime<Utc>,
-    /// Not read yet — set by the DB `updated_at` trigger-less default;
-    /// will surface once profile-update endpoints exist.
+    /// Not read yet -- `UserPublic` doesn't expose it either. Set by
+    /// `set_wallet_address` and available to a future endpoint that does.
     #[allow(dead_code)]
     pub updated_at: DateTime<Utc>,
 }
@@ -55,6 +60,7 @@ pub struct UserPublic {
     pub location: Option<String>,
     pub verified: bool,
     pub profile_complete: bool,
+    pub wallet_address: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -70,6 +76,7 @@ impl From<User> for UserPublic {
             location: u.location,
             verified: u.verified,
             profile_complete: u.profile_complete,
+            wallet_address: u.wallet_address,
             created_at: u.created_at,
         }
     }
@@ -85,6 +92,12 @@ pub struct RegisterRequest {
     pub organization_name: Option<String>,
     pub phone: Option<String>,
     pub location: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetWalletAddressRequest {
+    pub wallet_address: String,
 }
 
 #[derive(Debug, Deserialize)]

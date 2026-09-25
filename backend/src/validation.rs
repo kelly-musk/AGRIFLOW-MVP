@@ -26,6 +26,16 @@ pub fn is_valid_email(email: &str) -> bool {
     !label.is_empty() && !tld.is_empty()
 }
 
+/// Deliberately permissive, same spirit as `is_valid_email` -- checks
+/// shape (`0x` + 40 hex chars), not the EIP-55 mixed-case checksum. A
+/// checksum mismatch is far more likely to be a wallet's display
+/// preference than a typo, and rejecting valid-but-differently-cased
+/// addresses would be more user-hostile than useful here.
+pub fn is_valid_evm_address(address: &str) -> bool {
+    let Some(hex) = address.strip_prefix("0x") else { return false };
+    hex.len() == 40 && hex.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -43,5 +53,25 @@ mod tests {
         assert!(!is_valid_email("@missing-local.com"));
         assert!(!is_valid_email("two@at@signs.com"));
         assert!(!is_valid_email("no-dot@localhost"));
+    }
+
+    #[test]
+    fn accepts_well_formed_evm_addresses() {
+        assert!(is_valid_evm_address("0x9E93B3ffF884b736fECEACa33d93f33aAfDdc6C5"));
+        assert!(is_valid_evm_address("0x0000000000000000000000000000000000000000"));
+        // All-lowercase and all-uppercase hex bodies both accepted -- only
+        // the "0x" prefix itself must stay lowercase, same as every real
+        // address is actually written.
+        assert!(is_valid_evm_address("0x41648de45cc4d0172becd4db0a0a0b459c383705"));
+        assert!(is_valid_evm_address("0x41648DE45CC4D0172BECD4DB0A0A0B459C383705"));
+    }
+
+    #[test]
+    fn rejects_malformed_evm_addresses() {
+        assert!(!is_valid_evm_address("not-an-address"));
+        assert!(!is_valid_evm_address("9E93B3ffF884b736fECEACa33d93f33aAfDdc6C5")); // missing 0x
+        assert!(!is_valid_evm_address("0x9E93B3ffF884b736fECEACa33d93f33aAfDdc6")); // too short
+        assert!(!is_valid_evm_address("0x9E93B3ffF884b736fECEACa33d93f33aAfDdc6C55")); // too long
+        assert!(!is_valid_evm_address("0xZZ93B3ffF884b736fECEACa33d93f33aAfDdc6C5")); // non-hex
     }
 }

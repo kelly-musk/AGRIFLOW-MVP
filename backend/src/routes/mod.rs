@@ -7,6 +7,7 @@ pub mod listings;
 pub mod logistics;
 pub mod media;
 pub mod transactions;
+pub mod users;
 pub mod webhooks;
 
 use axum::{Router, routing::{get, patch, post}};
@@ -22,6 +23,7 @@ pub fn build(state: AppState) -> Router {
         .route("/auth/login", post(auth::login))
         .route("/auth/admin/login", post(auth::admin_login))
         .route("/auth/me", get(auth::me))
+        .route("/users/me/wallet", patch(users::set_wallet_address))
         .route("/admin/users", get(admin::list_users))
         .route("/admin/users/{id}/verify", patch(admin::set_verified))
         .route("/listings", get(listings::list_active).post(listings::create))

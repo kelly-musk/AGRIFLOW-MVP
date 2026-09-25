@@ -62,7 +62,7 @@ pub async fn list_users(
     let users = sqlx::query_as!(
         User,
         r#"
-        SELECT id, email, password_hash, name, role as "role: _", organization_name, phone, location, verified, profile_complete, created_at, updated_at
+        SELECT id, email, password_hash, name, role as "role: _", organization_name, phone, location, verified, profile_complete, wallet_address, created_at, updated_at
         FROM users
         WHERE ($1::text IS NULL OR role = $1)
           AND ($2::text IS NULL
@@ -121,7 +121,7 @@ pub async fn set_verified(
         User,
         r#"
         UPDATE users SET verified = $2, updated_at = now() WHERE id = $1
-        RETURNING id, email, password_hash, name, role as "role: _", organization_name, phone, location, verified, profile_complete, created_at, updated_at
+        RETURNING id, email, password_hash, name, role as "role: _", organization_name, phone, location, verified, profile_complete, wallet_address, created_at, updated_at
         "#,
         id,
         body.verified,

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE users SET verified = $2, updated_at = now() WHERE id = $1\n        RETURNING id, email, password_hash, name, role as \"role: _\", organization_name, phone, location, verified, profile_complete, created_at, updated_at\n        ",
+  "query": "\n        SELECT id, email, password_hash, name, role as \"role: _\", organization_name, phone, location, verified, profile_complete, wallet_address, created_at, updated_at\n        FROM users WHERE id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -115,6 +115,17 @@
       },
       {
         "ordinal": 10,
+        "name": "wallet_address",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "wallet_address"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -125,7 +136,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -138,8 +149,7 @@
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Bool"
+        "Text"
       ]
     },
     "nullable": [
@@ -153,9 +163,10 @@
       true,
       false,
       false,
+      true,
       false,
       false
     ]
   },
-  "hash": "d563bb57c6ce62c7797d030626b15178869e0e37684cd2009d4f17f5850eb021"
+  "hash": "99e076ce9e8d08c25f10836f4406323671eae9b41f1cf3784d3fe966653c0f54"
 }
